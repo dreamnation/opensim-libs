@@ -43,18 +43,18 @@ namespace HttpServer
         public bool FullRequestProcessed;
         
         public bool StopMonitoring;
-		/// <summary>
-		/// This context have been cleaned, which means that it can be reused.
-		/// </summary>
-    	public event EventHandler Cleaned = delegate { };
-
-		/// <summary>
-		/// Context have been started (a new client have connected)
-		/// </summary>
-    	public event EventHandler Started = delegate { };
+        /// <summary>
+        /// This context have been cleaned, which means that it can be reused.
+        /// </summary>
+        public event EventHandler Cleaned = delegate { };
 
         /// <summary>
-		/// Initializes a new instance of the <see cref="HttpClientContext"/> class.
+        /// Context have been started (a new client have connected)
+        /// </summary>
+        public event EventHandler Started = delegate { };
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="HttpClientContext"/> class.
         /// </summary>
         /// <param name="secured">true if the connection is secured (SSL/TLS)</param>
         /// <param name="remoteEndPoint">client that connected.</param>
@@ -77,8 +77,8 @@ namespace HttpServer
                 throw new ArgumentException("Stream must be writable and readable.");
 
             _bufferSize = bufferSize;
-			RemoteAddress = remoteEndPoint.Address.ToString();
-			RemotePort = remoteEndPoint.Port.ToString();
+            RemoteAddress = remoteEndPoint.Address.ToString();
+            RemotePort = remoteEndPoint.Port.ToString();
             _log = NullLogWriter.Instance;
             _parser = parserFactory.CreateParser(_log);
             _parser.RequestCompleted += OnRequestCompleted;
@@ -159,7 +159,7 @@ namespace HttpServer
                 LogWriter.Write(this, LogPrio.Debug, err.ToString());
             }
 
-        	Started(this, EventArgs.Empty);
+            Started(this, EventArgs.Empty);
         }
 
         /// <summary>
@@ -170,16 +170,16 @@ namespace HttpServer
         /// </remarks>
         public virtual void Cleanup()
         {
-        	if (Stream == null) 
-				return;
+            if (Stream == null) 
+                return;
             if (StreamPassedOff)
                 return;
             _sock = null;
             
-        	Stream.Dispose();
-        	Stream = null;
-        	_currentRequest.Clear();
-        	_bytesLeft = 0;
+            Stream.Dispose();
+            Stream = null;
+            _currentRequest.Clear();
+            _bytesLeft = 0;
             
             FirstRequestLineReceived = false;
             FullRequestReceived = false;
@@ -189,8 +189,8 @@ namespace HttpServer
             MonitorKeepaliveMS = 0;
             TriggerKeepalive = false;
 
-        	Cleaned(this, EventArgs.Empty);
-        	_parser.Clear();
+            Cleaned(this, EventArgs.Empty);
+            _parser.Clear();
         }
 
         public void Close()
@@ -222,10 +222,10 @@ namespace HttpServer
         {
             get { return _log; }
             set 
-			{ 
-				_log = value ?? NullLogWriter.Instance;
-				_parser.LogWriter = _log;
-			}
+            { 
+                _log = value ?? NullLogWriter.Instance;
+                _parser.LogWriter = _log;
+            }
         }
 
         private Stream _stream;
@@ -324,8 +324,8 @@ namespace HttpServer
 #pragma warning restore 219
 #endif
                 int offset = _parser.Parse(_buffer, 0, _bytesLeft);
-				if (Stream == null)
-					return; // "Connection: Close" in effect.
+                if (Stream == null)
+                    return; // "Connection: Close" in effect.
 
                 // try again to see if we can parse another message (check parser to see if it is looking for a new message)
                 int oldOffset = offset;
@@ -336,9 +336,9 @@ namespace HttpServer
                     LogWriter.Write(this, LogPrio.Trace, "Processing: " + temp);
 #endif
                     offset = _parser.Parse(_buffer, offset, _bytesLeft - offset);
-					if (Stream == null)
-						return; // "Connection: Close" in effect.
-				}
+                    if (Stream == null)
+                        return; // "Connection: Close" in effect.
+                }
 
                 // need to be able to move prev bytes, so restore offset.
                 if (offset == 0)
@@ -346,16 +346,16 @@ namespace HttpServer
 
                 // copy unused bytes to the beginning of the array
                 if (offset > 0 && _bytesLeft > offset)
-					Buffer.BlockCopy(_buffer, offset, _buffer, 0, _bytesLeft - offset);
+                    Buffer.BlockCopy(_buffer, offset, _buffer, 0, _bytesLeft - offset);
 
                 _bytesLeft -= offset;
                 if (Stream != null && Stream.CanRead && !StreamPassedOff)
-					Stream.BeginRead(_buffer, _bytesLeft, _buffer.Length - _bytesLeft, OnReceive, null);
-				else
-				{
-					_log.Write(this, LogPrio.Warning, "Could not read any more from the socket.");
-					Disconnect(SocketError.Success);
-				}
+                    Stream.BeginRead(_buffer, _bytesLeft, _buffer.Length - _bytesLeft, OnReceive, null);
+                else
+                {
+                    _log.Write(this, LogPrio.Warning, "Could not read any more from the socket.");
+                    Disconnect(SocketError.Success);
+                }
             }
             catch (BadRequestException err)
             {
@@ -417,7 +417,7 @@ namespace HttpServer
                 TriggerKeepalive = true;
 
             if (!StreamPassedOff)
-			    _currentRequest.Clear();
+                _currentRequest.Clear();
         }
 
         /// <summary>
@@ -501,18 +501,20 @@ namespace HttpServer
             if (offset + size > buffer.Length)
                 throw new ArgumentOutOfRangeException("offset", offset, "offset + size is beyond end of buffer.");
 
-            if (Stream != null && Stream.CanWrite)
-            {
-                try
-                {
-                    Stream.Write(buffer, offset, size);
-                } 
-                catch (IOException)
-                {
-                       
-                }
-            }
+            if (Stream is ReusableSocketNetworkStream) {
 
+                // HttpServer.ReusableSocketNetworkStream.Write() = System.Net.Sockets.NetworkStream.Write()
+
+                Socket socket = ((ReusableSocketNetworkStream) Stream).GetSocket ();
+                while (size > 0) {
+                    int rc = socket.Send (buffer, offset, size, SocketFlags.None);
+                    if (rc <= 0) throw new IOException ("socket send failed rc=" + rc);
+                    offset += rc;
+                    size -= rc;
+                }
+            } else {
+                Stream.Write (buffer, offset, size);
+            }
         }
 
         /// <summary>
